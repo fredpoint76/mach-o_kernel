@@ -189,7 +189,7 @@ static const struct macho_cpu_subentry macho_cpu_m68k_subtypes[] = {
 #undef _PRF
 #ifdef CONFIG_X86
 #define _PRF(pref) pref
-#elif
+#else
 #define _PRF(pref) 0
 #endif
 static const struct macho_cpu_subentry macho_cpu_i386_subtypes[] = {
