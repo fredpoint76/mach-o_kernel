@@ -5,7 +5,7 @@
  * on Mac OS X and Darwin machines.
  *
  * Copyright (C) 2006, Kyle Moffett <mrmacman_g4@mac.com>
- * Copyright (C) 2008, Fr�d�ric Point <fredpoint@gmail.com>
+ * Copyright (C) 2008, Frederic Point <fredpoint@gmail.com>
  *
  * Designed from public documentation and Darwin sources as well as the Linux
  * ELF loader by Eric Youngdale (ericy@cais.com).
@@ -42,7 +42,7 @@
 MODULE_LICENSE("GPL");
 
 /* Function prototypes */
-static unsigned long get_arch_offset(struct linux_binprm *bprm);
+static unsigned long get_arch_offset(struct linux_binprm *bprm, unsigned long arch_offset);
 static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs);
 
 /* Mach-O binary format */
@@ -89,7 +89,8 @@ static int set_brk(unsigned long start, unsigned long end)
 #endif
 
 static unsigned long macho_segment_map(struct file *filep,
-				       struct macho_loadcmd_segment32 *seg)
+				       struct macho_loadcmd_segment32 *seg,
+				       unsigned long arch_offset)
 {
 	unsigned long map_addr = 0; /* FIXME = 0 */
 	struct macho_loadcmd_section32 *sect;
@@ -104,6 +105,7 @@ static unsigned long macho_segment_map(struct file *filep,
 	macho_dbg("         vm_addr    %d\n", seg->vm_addr);
 	macho_dbg("         vm_size    %d\n", seg->vm_size);
 	macho_dbg("         file_off   %d\n", seg->file_off);
+	macho_dbg("         file_off + arch_offset   %d\n", seg->file_off + arch_offset);
 	macho_dbg("         file_size  %d\n", seg->file_size);
 	macho_dbg("         prot_max   %d\n", seg->prot_max);
 	macho_dbg("         prot_init  %d\n", seg->prot_init);
@@ -564,7 +566,7 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 					"MACHO_LOADCMD_NUM_SEGMENT32\n");
 				set_personality(PER_LINUX32);
 				retval = macho_segment_map(bprm->file,
-						&(data->loadcmd.segment32));
+						&(data->loadcmd.segment32), arch_offset);
 				if (retval == -EINVAL) {
 					goto out_noreturn;
 				}
