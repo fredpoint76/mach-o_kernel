@@ -42,7 +42,7 @@
 MODULE_LICENSE("GPL");
 
 /* Function prototypes */
-static unsigned long get_arch_offset(struct linux_binprm *bprm, unsigned long arch_offset);
+static unsigned long get_arch_offset(struct linux_binprm *bprm);
 static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs);
 
 /* Mach-O binary format */
@@ -150,6 +150,7 @@ static unsigned long macho_segment_map(struct file *filep,
 		macho_dbg("           vm_addr   %d\n", sect->vm_addr);
 		macho_dbg("           vm_size   %d\n", sect->vm_size);
 		macho_dbg("           file_off  %d\n", sect->file_off);
+		macho_dbg("           file_off + arch_offset   %d\n", sect->file_off + arch_offset);
 		macho_dbg("           align     %d\n", sect->align);
 		macho_dbg("           rel_off   %d\n", sect->rel_off);
 		macho_dbg("           rel_count %d\n", sect->rel_count);
@@ -177,7 +178,7 @@ static unsigned long macho_segment_map(struct file *filep,
 	/* XXX FIXME XXX: type set to 0 */
 
 	map_addr = do_mmap(filep, vm_addr, vm_size,
-	perm, flags, seg->file_off);
+	perm, flags, seg->file_off + arch_offset);
 	macho_dbg("           MAP AT 0x%08lx\n", map_addr);;
 	up_write(&current->mm->mmap_sem);
 
