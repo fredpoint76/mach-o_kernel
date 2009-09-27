@@ -105,7 +105,7 @@ static unsigned long macho_segment_map(struct file *filep,
 	macho_dbg("         vm_addr    %d\n", seg->vm_addr);
 	macho_dbg("         vm_size    %d\n", seg->vm_size);
 	macho_dbg("         file_off   %d\n", seg->file_off);
-	macho_dbg("         file_off + arch_offset   %d\n", seg->file_off + arch_offset);
+	macho_dbg("         file_off + arch_offset   %d\n", (int) (seg->file_off + arch_offset));
 	macho_dbg("         file_size  %d\n", seg->file_size);
 	macho_dbg("         prot_max   %d\n", seg->prot_max);
 	macho_dbg("         prot_init  %d\n", seg->prot_init);
@@ -150,7 +150,7 @@ static unsigned long macho_segment_map(struct file *filep,
 		macho_dbg("           vm_addr   %d\n", sect->vm_addr);
 		macho_dbg("           vm_size   %d\n", sect->vm_size);
 		macho_dbg("           file_off  %d\n", sect->file_off);
-		macho_dbg("           file_off + arch_offset   %d\n", sect->file_off + arch_offset);
+		macho_dbg("           file_off + arch_offset   %d\n", (int)(sect->file_off + arch_offset));
 		macho_dbg("           align     %d\n", sect->align);
 		macho_dbg("           rel_off   %d\n", sect->rel_off);
 		macho_dbg("           rel_count %d\n", sect->rel_count);
@@ -346,7 +346,7 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 			err = retval;
 		} else {
 			macho_dbg("Truncated Mach-O object header: "
-					"(got %lub, wanted %lub)\n", retval,
+					"(got %lub, wanted %ub)\n", retval,
 					sizeof(data->header));
 			err = -ENOEXEC;
 		}
@@ -496,7 +496,7 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 				err = retval;
 			} else {
 				macho_dbg("Truncated Mach-O load command "
-					"%lu: (got %lib, wanted %lub)\n", i,
+					"%lu: (got %lib, wanted %ub)\n", i,
 					retval, sizeof(data->loadcmd.hdr));
 				err = -ENOEXEC;
 			}
@@ -529,7 +529,7 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 
 		/* Check that it isn't too big */
 		if (size > sizeof(data->loadcmd)) {
-			macho_dbg("Load command %lu is too big (%lu > %lu): "
+			macho_dbg("Load command %lu is too big (%lu > %u): "
 				"skipped!\n", i, size, sizeof(data->loadcmd));
 			loadcmd_size += size;
 			cur_offset   += size;

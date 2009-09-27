@@ -440,9 +440,37 @@ sysenter_past_esp:
 	.align 4
 	.long 1b,syscall_fault
 .previous
-
+#ifdef CONFIG_BSD_EMULATION
+#define BSD_STACK_OFFSET 4
 	GET_THREAD_INFO(%ebp)
-
+	testl $_TIF_BSD,TI_flags(%ebp)
+	jz ia32_bsd_jump2 
+	movl PT_OLDSS(%esp), %eax
+	movl %eax, %fs
+	movl PT_ECX(%esp), %ebp
+	/* Save the return ESP value to the place where linux is expecting it */
+	movl %ebp, PT_OLDESP(%esp)
+	movl %fs:BSD_STACK_OFFSET(%ebp), %eax
+	movl %eax, PT_EBX(%esp)
+	movl %fs:BSD_STACK_OFFSET+4(%ebp), %eax
+	movl %eax, PT_ECX(%esp)
+	/* Save the return EIP value to the place where linux is expecting it */
+	movl PT_EDX(%esp), %eax
+	movl %eax, PT_EIP(%esp)
+	movl %fs:BSD_STACK_OFFSET+8(%ebp), %eax
+	movl %eax, PT_EDX(%esp)
+	movl %fs:BSD_STACK_OFFSET+12(%ebp), %eax
+	movl %eax, PT_ESI(%esp)
+	movl %fs:BSD_STACK_OFFSET+16(%ebp), %eax
+	movl %eax, PT_EDI(%esp)
+//	movl %fs:BSD_STACK_OFFSET+20(%ebp), %eax
+//	movl %eax, PT_EBP(%esp)
+	movl $(__KERNEL_PERCPU), %eax
+	movl %eax, %fs
+	movl PT_EAX(%esp), %eax
+ia32_bsd_jump2:
+#endif
+	GET_THREAD_INFO(%ebp)
 	testl $_TIF_WORK_SYSCALL_ENTRY,TI_flags(%ebp)
 	jnz sysenter_audit
 sysenter_do_call:

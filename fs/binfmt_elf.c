@@ -997,6 +997,10 @@ static int load_elf_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 	 */
 	ELF_PLAT_INIT(regs, reloc_func_desc);
 #endif
+	if (loc->elf_ex.e_ident[EI_OSABI] == ELFOSABI_FREEBSD) {
+		printk(KERN_DEBUG "binfmt_elf: FreeBSD ELF detected\n",loc->elf_ex.e_ident[EI_OSABI], ELFOSABI_FREEBSD );
+		set_thread_flag(TIF_BSD);
+	}
 
 	start_thread(regs, elf_entry, bprm->p);
 	retval = 0;
