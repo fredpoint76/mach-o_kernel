@@ -445,18 +445,19 @@ sysenter_past_esp:
 	GET_THREAD_INFO(%ebp)
 	testl $_TIF_BSD,TI_flags(%ebp)
 	jz ia32_bsd_jump2 
+	/* Save the return EIP value to the place where linux is expecting it */
+	movl PT_EDX(%esp), %ebp
+	movl %ebp, PT_EIP(%esp)
+	/* Save the return ESP value to the place where linux is expecting it */
+	movl PT_ECX(%esp), %ebp
+	movl %ebp, PT_OLDESP(%esp)
+	/* We have now in %ebp the user stack pointer */
 	movl PT_OLDSS(%esp), %eax
 	movl %eax, %fs
-	movl PT_ECX(%esp), %ebp
-	/* Save the return ESP value to the place where linux is expecting it */
-	movl %ebp, PT_OLDESP(%esp)
 	movl %fs:BSD_STACK_OFFSET(%ebp), %eax
 	movl %eax, PT_EBX(%esp)
 	movl %fs:BSD_STACK_OFFSET+4(%ebp), %eax
 	movl %eax, PT_ECX(%esp)
-	/* Save the return EIP value to the place where linux is expecting it */
-	movl PT_EDX(%esp), %eax
-	movl %eax, PT_EIP(%esp)
 	movl %fs:BSD_STACK_OFFSET+8(%ebp), %eax
 	movl %eax, PT_EDX(%esp)
 	movl %fs:BSD_STACK_OFFSET+12(%ebp), %eax
