@@ -21,14 +21,6 @@
 #include <linux/sched.h>
 #include <linux/pagemap.h>
 
-#if 0
-#ifdef CONFIG_X86
-#include <asm/desc.h>
-#include <asm/hw_irq.h>
-#include <asm/proto.h>
-#endif
-#endif
-
 #include "debug.h"
 #include "cpus.h"
 #include "headers.h"
@@ -68,25 +60,6 @@ static void __exit exit_binfmt_macho(void)
 }
 module_exit(exit_binfmt_macho);
 
-
-#if 0
-#define BAD_ADDR(x)	((unsigned long)(x) >= TASK_SIZE)
-
-static int set_brk(unsigned long start, unsigned long end)
-{
-	start = PAGE_ALIGN(start);
-	end = PAGE_ALIGN(end);
-	if (end > start) {
-		unsigned long addr;
-		down_write(&current->mm->mmap_sem);
-		addr = do_brk(start, end - start);
-		up_write(&current->mm->mmap_sem);
-		if (BAD_ADDR(addr))
-			return addr;
-	}
-	return 0;
-}
-#endif
 
 static unsigned long macho_segment_map(struct file *filep,
 				       struct macho_loadcmd_segment32 *seg,
@@ -445,7 +418,7 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 	install_exec_creds(bprm);
 	set_personality(PER_LINUX32);
 	set_binfmt(&binfmt_macho);
-#if 1
+
 	/* FIXME: Set up ugly stack/brk/etc for testing, need to fix later */
 	current->mm->start_code = 0;
 	current->mm->end_code = 0;
@@ -464,11 +437,11 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 	 * darwinish
 	 */
 	//current->mm->mmap_base = TASK_UNMAPPED_BASE;
-/*	current->mm->get_unmapped_area = arch_get_unmapped_area;
-	current->mm->unmap_area = arch_unmap_area;*/
-// 	current->mm->free_area_cache = current->mm->mmap_base;
-// 	current->mm->cached_hole_size = 0;
-#endif
+	//current->mm->get_unmapped_area = arch_get_unmapped_area;
+	//current->mm->unmap_area = arch_unmap_area;
+	//current->mm->free_area_cache = current->mm->mmap_base;
+	//current->mm->cached_hole_size = 0;
+
 
 	/* Iterate over reading the load commands */
 	loadcmd_size = 0;
@@ -614,11 +587,17 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 #ifdef MACHO_INTERPRETER
 	/* XXX FIXME XXX: Load the interpreter */
 	if (mach_interpreter) {
+		macho_dbg("Loading dynamic Linker: %s\n", mach_interpreter);
 		interpreter = open_exec(mach_interpreter);
 		retval = PTR_ERR(interpreter);
 		if (IS_ERR(interpreter))
 			goto out_free_interp;
-	else {
+		macho_dbg("                       => OK\n");
+	} else {
+#endif
+
+#ifdef MACHO_INTERPRETER
+	}
 #endif
 
 #ifdef CONFIG_X86
@@ -670,9 +649,6 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 	retval = 0;
 	return retval;
 
-#ifdef MACHO_INTERPRETER
-	}
-#endif
 
 	err = -EINVAL;
 	goto out_noreturn;
