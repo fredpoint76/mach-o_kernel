@@ -5,6 +5,17 @@
 # include <linux/types.h>
 # include <linux/err.h>
 
+#ifdef CONFIG_X86
+#define MACHO_PLAT_INIT_32(_r)    do { \
+        _r->bx = 0; _r->cx = 0; _r->dx = 0; \
+        _r->si = 0; _r->di = 0; _r->bp = 0; \
+        _r->ax = 0; \
+} while (0)
+#elif CONFIG_PPC
+/* XXX FIXME XXX: See if we need to initialize the registers on PPC */
+#endif
+
+
 /*
  * Mach-O CPU types, borrowed from Darwin
  */
@@ -189,6 +200,29 @@ static const struct macho_cpu_subentry macho_cpu_m68k_subtypes[] = {
 #undef _PRF
 #ifdef CONFIG_X86
 #define _PRF(pref) pref
+
+/* !!! FIXME !!!: put that in another file */
+#define	_STRUCT_X86_THREAD_STATE32	struct i386_thread_state
+_STRUCT_X86_THREAD_STATE32
+{
+    unsigned int	eax;
+    unsigned int	ebx;
+    unsigned int	ecx;
+    unsigned int	edx;
+    unsigned int	edi;
+    unsigned int	esi;
+    unsigned int	ebp;
+    unsigned int	esp;
+    unsigned int	ss;
+    unsigned int	eflags;
+    unsigned int	eip;
+    unsigned int	cs;
+    unsigned int	ds;
+    unsigned int	es;
+    unsigned int	fs;
+    unsigned int	gs;
+};
+
 #else
 #define _PRF(pref) 0
 #endif

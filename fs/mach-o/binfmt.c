@@ -14,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/binfmts.h>
 #include <linux/fs.h>
+#include <linux/mm.h>
 #include <linux/mman.h>
 #include <linux/err.h>
 #include <linux/personality.h>
@@ -49,7 +50,7 @@ static struct linux_binfmt binfmt_macho = {
 /* Module init and exit */
 static int __init init_binfmt_macho(void)
 {
-	macho_dbg("INIT MACH-O\n");
+	macho_dbg("INIT MACH-O:\n");
 	return register_binfmt(&binfmt_macho);
 }
 core_initcall(init_binfmt_macho);
@@ -59,6 +60,24 @@ static void __exit exit_binfmt_macho(void)
 	unregister_binfmt(&binfmt_macho);
 }
 module_exit(exit_binfmt_macho);
+
+void show_vma (void)
+{
+	struct vm_area_struct *vma;
+	vma = current->mm->mmap;
+	macho_dbg("Mapping :\n");
+	while (vma) {
+		macho_dbg("      %08lx-%08lx %c%c%c%c %08lx\n",
+			vma->vm_start,
+			vma->vm_end,
+			vma->vm_flags & VM_READ ? 'r' : '-',
+			vma->vm_flags & VM_WRITE ? 'w' : '-',
+			vma->vm_flags & VM_EXEC ? 'x' : '-',
+			vma->vm_flags & VM_MAYSHARE ? 's' : 'p',
+			vma->vm_pgoff << PAGE_SHIFT);
+		vma = vma->vm_next;
+	}
+}
 
 
 static unsigned long macho_segment_map(struct file *filep,
@@ -78,7 +97,8 @@ static unsigned long macho_segment_map(struct file *filep,
 	macho_dbg("         vm_addr    %d\n", seg->vm_addr);
 	macho_dbg("         vm_size    %d\n", seg->vm_size);
 	macho_dbg("         file_off   %d\n", seg->file_off);
-	macho_dbg("         file_off + arch_offset   %d\n", (int) (seg->file_off + arch_offset));
+	macho_dbg("         file_off + arch_offset   %d\n", (int) (seg->file_off
+				+ arch_offset));
 	macho_dbg("         file_size  %d\n", seg->file_size);
 	macho_dbg("         prot_max   %d\n", seg->prot_max);
 	macho_dbg("         prot_init  %d\n", seg->prot_init);
@@ -96,34 +116,25 @@ static unsigned long macho_segment_map(struct file *filep,
 	if (seg->prot_init & MACHO_PERM_X)
 		perm |= PROT_EXEC;
 
-	flags = MAP_PRIVATE | MAP_DENYWRITE;
+	flags = MAP_PRIVATE | MAP_DENYWRITE | MAP_FIXED;
 	/* FIXME: type set to 0 */
 	macho_dbg("           ALLOC:\n");
 	macho_dbg("             addr: %016x\n", seg->vm_addr);
 	macho_dbg("             size: %d\n", seg->vm_size);
-	//macho_dbg("             TASK_SIZE: %li\n", TASK_SIZE);
 	if (!strcmp(seg->name, "__PAGEZERO")) {
 		macho_dbg("      PAGEZERO detected\n");
 		filep = NULL;
+		flags |= MAP_FIXED;
 	}
-#if 0
-	down_write(&current->mm->mmap_sem);
-	err = do_brk(seg->vm_addr, seg->vm_size);
-	up_write(&current->mm->mmap_sem);
-	if ( err != (seg->vm_addr & PAGE_MASK)) {
-		macho_dbg("                  => fail\n");
-		goto out_error;
-	}
-		
-	macho_dbg("                  => success\n");
-#endif
+
 	sect = (void *)seg + sizeof(*seg);
 	for ( i = 0;  i < seg->sect_count;i++, sect++) {
 		macho_dbg("      - Section %d: %s\n", i+1, sect->name);
 		macho_dbg("           vm_addr   %d\n", sect->vm_addr);
 		macho_dbg("           vm_size   %d\n", sect->vm_size);
 		macho_dbg("           file_off  %d\n", sect->file_off);
-		macho_dbg("           file_off + arch_offset   %d\n", (int)(sect->file_off + arch_offset));
+		macho_dbg("           file_off + arch_offset   %d\n", 
+					(int)(sect->file_off + arch_offset));
 		macho_dbg("           align     %d\n", sect->align);
 		macho_dbg("           rel_off   %d\n", sect->rel_off);
 		macho_dbg("           rel_count %d\n", sect->rel_count);
@@ -152,7 +163,8 @@ static unsigned long macho_segment_map(struct file *filep,
 
 	map_addr = do_mmap(filep, vm_addr, vm_size,
 	perm, flags, seg->file_off + arch_offset);
-	macho_dbg("           MAP AT 0x%08lx\n", map_addr);;
+	macho_dbg("           MAP AT 0x%08lx - 0x%08lx\n", map_addr,
+				map_addr + vm_size);
 	up_write(&current->mm->mmap_sem);
 
 	return(map_addr);
@@ -252,6 +264,125 @@ static unsigned long get_arch_offset(struct linux_binprm *bprm)
 out:
 	//kfree(archs);
 	return offset;
+}
+
+
+/* Let's use some macros to make this stack manipulation a little clearer */
+#ifdef CONFIG_STACK_GROWSUP
+#define STACK_ADD(sp, items) ((int __user *)(sp) + (items))
+#define STACK_ROUND(sp, items) \
+	((15 + (unsigned long) ((sp) + (items))) &~ 15UL)
+#define STACK_ALLOC(sp, len) ({ \
+	elf_addr_t __user *old_sp = (int __user *)sp; sp += len; \
+	old_sp; })
+#else
+#define STACK_ADD(sp, items) ((int __user *)(sp) - (items))
+#define STACK_ROUND(sp, items) \
+	(((unsigned long) (sp - items)) &~ 15UL)
+#define STACK_ALLOC(sp, len) ({ sp -= len ; sp; })
+#endif
+
+/*
+ * Load argv and env
+ */
+static int
+setup_stack(struct linux_binprm *bprm)
+{
+	unsigned long p = bprm->p;
+	int argc = bprm->argc;
+	int envc = bprm->envc;
+	int __user *argv;
+	int __user *envp;
+	int __user *sp;
+	int items;
+	//struct vm_area_struct *vma;
+
+	macho_dbg("setup_stack\n");
+
+
+	macho_dbg("exec_path: %s (%d)\n", bprm->interp, strlen(bprm->interp));
+	sp = (int __user *)bprm->p;
+	macho_dbg("sp: %016x\n", (unsigned int)sp);
+	items = (argc + 1) + (envc + 1) + ( (strlen(bprm->interp))/4 + 2) + 1;
+	macho_dbg("items: %d\n", (unsigned int)items);
+	bprm->p = STACK_ROUND(sp, items);
+	macho_dbg("sp: %016x\n", (unsigned int)bprm->p);
+	
+	/* Point sp at the lowest address on the stack */
+#ifdef CONFIG_STACK_GROWSUP
+	sp = (int __user *)bprm->p - items - ei_index;
+	bprm->exec = (unsigned long)sp; /* XXX: PARISC HACK */
+#else
+	sp = (int __user *)bprm->p;
+#endif
+	macho_dbg("sp: %016x\n", (unsigned int)sp);
+
+
+	/*
+	 * Grow the stack manually; some architectures have a limit on how
+	 * far ahead a user-space access may be in order to grow the stack.
+	 */
+//	vma = find_extend_vma(current->mm, bprm->p);
+//	if (!vma)
+//		return -EFAULT;
+
+	/* Now, let's put argc (and argv, envp if appropriate) on the stack */
+	if (__put_user(argc, sp++))
+		return -EFAULT;
+	argv = sp;
+	envp = argv + argc + 1;
+
+	macho_dbg("argv: %08x\n", (unsigned int)argv);
+	macho_dbg("argc: %d\n", argc);
+	macho_dbg("envc: %d\n", envc);
+	macho_dbg("MAX_ARG_STRLEN: %lu\n", MAX_ARG_STRLEN);
+	
+	/* Populate argv and envp */
+	p = current->mm->arg_end = current->mm->arg_start;
+	macho_dbg("arg_start: %08x\n", (unsigned int)p);
+
+	while (argc-- > 0) {
+		size_t len;
+		macho_dbg("argv[%d]: %016x\n", argc, (unsigned int)p);
+		if (__put_user(p, argv++))
+			return -EFAULT;
+		len = strnlen_user((void __user *)p, MAX_ARG_STRLEN);
+		macho_dbg("len: %d\n",len);
+		if (!len || len > MAX_ARG_STRLEN)
+			return -EINVAL;
+		p += len;
+	}
+	macho_dbg("------------------------\n");
+	if (__put_user(0, argv))
+		return -EFAULT;
+	current->mm->arg_end = current->mm->env_start = p;
+	while (envc-- > 0) {
+		size_t len;
+		macho_dbg("envv[%d]: %016x\n",envc,(unsigned int)p);
+		if (__put_user(p, envp++))
+			return -EFAULT;
+		len = strnlen_user((void __user *)p, MAX_ARG_STRLEN);
+		if (!len || len > MAX_ARG_STRLEN)
+			return -EINVAL;
+		p += len;
+	}
+	if (__put_user(0, envp))
+		return -EFAULT;
+	current->mm->env_end = p;
+
+	/*
+	 * Put the exec_path pointer and the exec_path
+	 */
+	macho_dbg("---- envp: %016x\n",(unsigned int)envp);
+	sp = (int __user *)envp + 1;
+	macho_dbg("---- sp: %016x\n",(unsigned int)sp);
+	macho_dbg("---- sp + 8: %016x\n",(unsigned int)(sp+8));
+	if (__put_user(sp + 8, sp))
+		return -EFAULT; 
+	/* Put the elf_info on the stack in the right place.  */
+//	if (copy_to_user(sp, elf_info, ei_index * sizeof(elf_addr_t)))
+//		return -EFAULT;
+	return 0;
 }
 
 /*
@@ -442,6 +573,15 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 	//current->mm->free_area_cache = current->mm->mmap_base;
 	//current->mm->cached_hole_size = 0;
 
+	/*
+	 * Setup the args before populate the stack
+	 */
+
+	retval = setup_arg_pages(bprm, STACK_TOP, 1);
+	if (retval < 0) {
+		goto out_noreturn;
+	}	 
+
 
 	/* Iterate over reading the load commands */
 	loadcmd_size = 0;
@@ -553,18 +693,20 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 				macho_dbg("    Load command: "
 					"MACHO_LOADCMD_NUM_THREAD\n");
 				/* XXX FIXME XXX: static should be dynamic */ 
-#define START_STACK 0xBF000000UL
+
 				stack_size = PAGE_SIZE;
-				macho_dbg("             PAGE_SIZE: 0x%08lx\n", PAGE_SIZE);
-				down_write(&current->mm->mmap_sem);
-				current->mm->start_stack = do_mmap(NULL, START_STACK - stack_size, stack_size,
-					 PROT_READ | PROT_WRITE | PROT_EXEC,
-					 MAP_PRIVATE | MAP_ANONYMOUS | MAP_GROWSDOWN,
-					 0);
-				/* XXX ????? XXX */
-				current->mm->start_stack += stack_size - 0x20;
-				up_write(&current->mm->mmap_sem);
-				/* XXX FIXME XXX: Load envv and argv */ 
+				/* Setup envv and argv */
+				setup_stack(bprm);
+				if (retval = -EINVAL) {
+					macho_dbg("Houston weve got a problem\n");
+				}
+				
+				current->mm->start_stack = bprm->p;
+				/* XXX FIXME XXX: Setup register */
+#ifdef MACHO_PLAT_INIT
+				MACHO_PLAT_INIT_32(regs);
+#endif
+				
 
 				break;
 			case MACHO_LOADCMD_NUM_REF_DYLD:
@@ -573,9 +715,16 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 				/* Get the name of the dynamic linker for
 				 * further use
 				 */
+				mach_interpreter = kmalloc(30,
+						  GFP_KERNEL);
+#ifdef MACHO_INTERPRETER
+				if (!mach_interpreter)
+					goto out_free_interp;
+#endif
 				mach_interpreter =
 					(char *)(&(data->loadcmd.dyld.data[0]));
-				mach_interpreter[data->loadcmd.hdr.size - data->loadcmd.dyld.path.off] = '\0';
+				mach_interpreter[data->loadcmd.hdr.size 
+							- data->loadcmd.dyld.path.off] = '\0';
 				macho_dbg("    Dynamic Linker found: %s"
 						" at %d\n", mach_interpreter,
 						data->loadcmd.dyld.path.off);
@@ -593,25 +742,11 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 		if (IS_ERR(interpreter))
 			goto out_free_interp;
 		macho_dbg("                       => OK\n");
-	} else {
-#endif
-
-#ifdef MACHO_INTERPRETER
 	}
 #endif
 
-#ifdef CONFIG_X86
-#define MACHO_PLAT_INIT_32(_r, load_addr)    do { \
-        _r->bx = 0; _r->cx = 0; _r->dx = 0; \
-        _r->si = 0; _r->di = 0; _r->bp = 0; \
-        _r->ax = 0; \
-} while (0)
-#elif CONFIG_PPC
-/* XXX FIXME XXX: See if we need to initialize the registers on PPC */
-#endif
-#ifdef MACHO_PLAT_INIT
-	MACHO_PLAT_INIT_32(regs, reloc_func_desc);
-#endif
+
+
 #ifdef CONFIG_X86
 	set_thread_flag(TIF_IA32);
 	set_thread_flag(TIF_BSD);
@@ -627,23 +762,7 @@ static int load_macho_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 	macho_dbg("- stack_size  0x%08lx\n", stack_size);
 	//macho_dbg("- TASK_SIZE:  0x%08lx\n", TASK_SIZE);
 
-
-	{
-	struct vm_area_struct *vma;
-	vma = current->mm->mmap;
-	macho_dbg("Mapping :\n");
-	while (vma) {
-		macho_dbg("      %08lx-%08lx %c%c%c%c %08lx\n",
-			vma->vm_start,
-			vma->vm_end,
-			vma->vm_flags & VM_READ ? 'r' : '-',
-			vma->vm_flags & VM_WRITE ? 'w' : '-',
-			vma->vm_flags & VM_EXEC ? 'x' : '-',
-			vma->vm_flags & VM_MAYSHARE ? 's' : 'p',
-			vma->vm_pgoff << PAGE_SHIFT);
-		vma = vma->vm_next;
-	}
-	}
+	show_vma();
 
 	start_thread(regs, current->mm->start_code, current->mm->start_stack);
 	retval = 0;
