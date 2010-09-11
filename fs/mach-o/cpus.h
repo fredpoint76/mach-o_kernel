@@ -123,6 +123,9 @@ enum {
 	_ENTRY(PARISC_ALL,		0x00000000),
 	_ENTRY(PARISC_7100LC,		0x00000001),
 
+	/* ARM subtypes */
+	_ENTRY(ARM_ALL,			0x00000000),
+
 	/* Motorola 88xxx subtypes */
 	_ENTRY(M88K_ALL,		0x00000000),
 	_ENTRY(M88K_MC88100,		0x00000001),
@@ -287,6 +290,16 @@ static const struct macho_cpu_subentry macho_cpu_parisc_subtypes[] = {
 	_ENTRY(PARISC,	7100LC,		"HPPA 7100LC",			 _PRF(2)),
 	{ .name = NULL },
 };
+#undef _PRF
+#ifdef CONFIG_ARM
+#define _PRF(pref) pref
+#else
+#define _PRF(pref) 0
+#endif
+static const struct macho_cpu_subentry macho_cpu_arm_subtypes[] = {
+	_ENTRY(ARM,	ALL,		"all ARM",			 _PRF(1)),
+	{ .name = NULL },
+};
 static const struct macho_cpu_subentry macho_cpu_m88k_subtypes[] = {
 	_ENTRY(M88K,	ALL,		"All Motorola 88xxx",		 _PRF(1)),
 	_ENTRY(M88K,	MC88100,	"Motorola 88100",		 _PRF(2)),
@@ -367,7 +380,7 @@ static const struct macho_cpu_entry macho_cpu_types[] = {
 	_ENTRY(MIPS,	macho_cpu_mips_subtypes,	"MIPS"		),
 	_ENTRY(M98K,	macho_cpu_m98k_subtypes,	"Motorola 98xxx"),
 	_ENTRY(PARISC,	macho_cpu_parisc_subtypes,	"HPPA/PaRISC"	),
-	_ENTRY(ARM,	NULL,				"ARM"		),
+	_ENTRY(ARM,		macho_cpu_arm_subtypes,		"ARM"		),
 	_ENTRY(M88K,	macho_cpu_m88k_subtypes,	"Motorola 88xxx"),
 	_ENTRY(SPARC,	macho_cpu_sparc_subtypes,	"Sparc"		),
 	_ENTRY(I860,	macho_cpu_i860_subtypes,	"i860"		),
