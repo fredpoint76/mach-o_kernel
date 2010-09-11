@@ -124,7 +124,6 @@ static unsigned long macho_segment_map(struct file *filep,
 	if (!strcmp(seg->name, "__PAGEZERO")) {
 		macho_dbg("      PAGEZERO detected\n");
 		filep = NULL;
-		flags |= MAP_FIXED;
 	}
 
 	sect = (void *)seg + sizeof(*seg);
