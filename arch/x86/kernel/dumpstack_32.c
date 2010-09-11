@@ -84,7 +84,7 @@ show_stack_log_lvl(struct task_struct *task, struct pt_regs *regs,
 		if (kstack_end(stack))
 			break;
 		if (i && ((i % STACKSLOTS_PER_LINE) == 0))
-			printk("\n-%s", log_lvl);
+			printk("\n%s", log_lvl);
 		printk(" %08lx", *stack++);
 		touch_nmi_watchdog();
 	}

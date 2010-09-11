@@ -102,7 +102,6 @@
 #define resume_userspace_sig	resume_userspace
 #endif
 
-
 /*
  * User gs save/restore
  *
